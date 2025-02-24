@@ -21,6 +21,11 @@
 #define AMPLITUDE 32767
 #define BUFFER_SIZE 8192
 
+// Si5351 clock frequencies
+uint64_t clk0_freq = 100000000ULL; // 100 MHz
+uint64_t clk1_freq = 50000000ULL;  // 50 MHz
+uint64_t clk2_freq = 25000000ULL;  // 25 MHz
+
 // Si5351 object
 Si5351 si5351;
 
@@ -161,13 +166,13 @@ void handleRoot() {
         </form>
         <form action="/setsi5351" method="GET">
           <label for="clk0_freq">Si5351 CLK0 Frequency (Hz):</label>
-          <input type="number" id="clk0_freq" name="clk0_freq" min="100000" max="200000000" value="100000000">
+          <input type="number" id="clk0_freq" name="clk0_freq" min="100000" max="200000000" value=")" + String(clk0_freq) + R"(">
           <br>
           <label for="clk1_freq">Si5351 CLK1 Frequency (Hz):</label>
-          <input type="number" id="clk1_freq" name="clk1_freq" min="100000" max="200000000" value="50000000">
+          <input type="number" id="clk1_freq" name="clk1_freq" min="100000" max="200000000" value=")" + String(clk1_freq) + R"(">
           <br>
           <label for="clk2_freq">Si5351 CLK2 Frequency (Hz):</label>
-          <input type="number" id="clk2_freq" name="clk2_freq" min="100000" max="200000000" value="25000000">
+          <input type="number" id="clk2_freq" name="clk2_freq" min="100000" max="200000000" value=")" + String(clk2_freq) + R"(">
           <br>
           <input type="submit" value="Set Si5351 Frequencies">
         </form>
@@ -180,9 +185,9 @@ void handleRoot() {
 // Handle Si5351 frequency update
 void handleSetSi5351() {
   if (server.hasArg("clk0_freq") && server.hasArg("clk1_freq") && server.hasArg("clk2_freq")) {
-    uint64_t clk0_freq = server.arg("clk0_freq").toInt(); // Input is already in Hz
-    uint64_t clk1_freq = server.arg("clk1_freq").toInt(); // Input is already in Hz
-    uint64_t clk2_freq = server.arg("clk2_freq").toInt(); // Input is already in Hz
+    clk0_freq = server.arg("clk0_freq").toInt(); // Input is already in Hz
+    clk1_freq = server.arg("clk1_freq").toInt(); // Input is already in Hz
+    clk2_freq = server.arg("clk2_freq").toInt(); // Input is already in Hz
 
     si5351.set_freq(clk0_freq, SI5351_CLK0);
     si5351.set_freq(clk1_freq, SI5351_CLK1);
@@ -200,10 +205,10 @@ void setupSi5351() {
     while (1); // Halt if initialization fails
   }
 
-  // Set initial frequencies
-  si5351.set_freq(100000000ULL, SI5351_CLK0); // 100 MHz on CLK0
-  si5351.set_freq(50000000ULL, SI5351_CLK1);  // 50 MHz on CLK1
-  si5351.set_freq(25000000ULL, SI5351_CLK2);  // 25 MHz on CLK2
+  // Set initial frequencies using global variables
+  si5351.set_freq(clk0_freq, SI5351_CLK0);
+  si5351.set_freq(clk1_freq, SI5351_CLK1);
+  si5351.set_freq(clk2_freq, SI5351_CLK2);
 
   // Enable outputs
   si5351.output_enable(SI5351_CLK0, 1);
@@ -212,7 +217,6 @@ void setupSi5351() {
 
   Serial.println("Si5351 initialized successfully!");
 }
-
 void setup() {
   // Initialize Serial
   Serial.begin(115200);
