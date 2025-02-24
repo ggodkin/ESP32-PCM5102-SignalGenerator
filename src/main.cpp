@@ -5,6 +5,8 @@
 #include <WebServer.h>
 #include <WiFiManager.h>
 #include <math.h> // Include math.h for fabs and floor functions
+#include <Wire.h>
+#include <si5351.h>
 
 // I2S configuration
 #define I2S_BCK_PIN 26
@@ -25,6 +27,8 @@ enum Waveform {
 
 // Web server
 WebServer server(80);
+
+Si5351 si5351;
 
 // Waveform settings
 volatile Waveform waveform = SINE;       // Default waveform
@@ -95,7 +99,7 @@ void handleRoot() {
         <p>Connected to: )" + String(WiFi.SSID()) + R"(</p>
         <p>IP Address: )" + WiFi.localIP().toString() + R"(</p>
         <form action="/setwaveform" method="GET">
-          <label for="waveform">Waveform&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp:</label>
+          <label for="waveform">Waveform&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp:</label>
           <select id="waveform" name="waveform">
             <option value="0")" + (waveform == SINE ? " selected" : "") + R"(>Sine</option>
             <option value="1")" + (waveform == TRIANGLE ? " selected" : "") + R"(>Triangle</option>
@@ -160,6 +164,25 @@ void setup() {
   // Initialize Serial
   Serial.begin(115200);
 
+    // Initialize I2C
+    Wire.begin();
+
+    // Initialize Si5351
+    if (si5351.init(SI5351_CRYSTAL_LOAD_8PF, 0, 0) == false) {
+      Serial.println("Si5351 initialization failed!");
+      while (1); // Halt if initialization fails
+    }
+  
+    // Set Si5351 outputs to default frequencies
+    si5351.set_freq(100000000, SI5351_CLK0); // 100 MHz on CLK0
+    si5351.set_freq(50000000, SI5351_CLK1);  // 50 MHz on CLK1
+    si5351.set_freq(25000000, SI5351_CLK2);  // 25 MHz on CLK2
+  
+    // Enable the outputs
+    si5351.output_enable(SI5351_CLK0, 1);
+    si5351.output_enable(SI5351_CLK1, 1);
+    si5351.output_enable(SI5351_CLK2, 1);
+  
   // Initialize WiFiManager
   WiFiManager wifiManager;
 
