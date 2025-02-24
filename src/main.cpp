@@ -4,9 +4,13 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include <WiFiManager.h>
-#include <math.h> // Include math.h for fabs and floor functions
-#include <Wire.h>
-#include <si5351.h>
+#include <math.h>
+#include <Wire.h>          // Include Wire for I2C
+#include <si5351.h>        // Include Etherkit Si5351 library
+
+// I2C configuration for Si5351
+#define I2C_SDA_PIN 19  // Use GPIO 19 for SDA
+#define I2C_SCL_PIN 18  // Use GPIO 18 for SCL
 
 // I2S configuration
 #define I2S_BCK_PIN 26
@@ -15,7 +19,10 @@
 #define SAMPLE_RATE 44100
 #define DEFAULT_FREQ 1000
 #define AMPLITUDE 32767
-#define BUFFER_SIZE 8192 // Increased buffer size for low frequencies
+#define BUFFER_SIZE 8192
+
+// Si5351 object
+Si5351 si5351;
 
 // Waveform types
 enum Waveform {
@@ -27,8 +34,6 @@ enum Waveform {
 
 // Web server
 WebServer server(80);
-
-Si5351 si5351;
 
 // Waveform settings
 volatile Waveform waveform = SINE;       // Default waveform
@@ -90,43 +95,6 @@ void generateWaveform() {
   }
 }
 
-// Handle root URL
-void handleRoot() {
-  String html = R"(
-    <html>
-      <body>
-        <h1>ESP32 Waveform Generator</h1>
-        <p>Connected to: )" + String(WiFi.SSID()) + R"(</p>
-        <p>IP Address: )" + WiFi.localIP().toString() + R"(</p>
-        <form action="/setwaveform" method="GET">
-          <label for="waveform">Waveform&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp:</label>
-          <select id="waveform" name="waveform">
-            <option value="0")" + (waveform == SINE ? " selected" : "") + R"(>Sine</option>
-            <option value="1")" + (waveform == TRIANGLE ? " selected" : "") + R"(>Triangle</option>
-            <option value="2")" + (waveform == SAWTOOTH ? " selected" : "") + R"(>Sawtooth</option>
-            <option value="3")" + (waveform == SQUARE ? " selected" : "") + R"(>Square</option>
-          </select>
-          <br>
-          <label for="left_freq">Left Channel Frequency (Hz)&nbsp&nbsp:</label>
-          <input type="number" id="left_freq" name="left_freq" min="1" max="20000" value=")" + String(left_freq) + R"(">
-          <br>
-          <label for="right_freq">Right Channel Frequency (Hz):</label>
-          <input type="number" id="right_freq" name="right_freq" min="1" max="20000" value=")" + String(right_freq) + R"(">
-          <br>
-          <label for="phase_shift">Phase Shift (degrees)&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp:</label>
-          <input type="number" id="phase_shift" name="phase_shift" min="0" max="360" value=")" + String(phase_shift * 180 / M_PI) + R"(">
-          <br>
-          <input type="submit" value="Set Waveform and Parameters">
-        </form>
-        <form action="/equalizefreq" method="GET">
-          <input type="submit" value="Make Frequencies Equal">
-        </form>
-      </body>
-    </html>
-  )";
-  server.send(200, "text/html", html);
-}
-
 // Handle waveform and parameter update
 void handleSetWaveform() {
   if (server.hasArg("waveform") && server.hasArg("left_freq") && server.hasArg("right_freq") && server.hasArg("phase_shift")) {
@@ -160,37 +128,103 @@ void handleEqualizeFreq() {
   server.send(303);
 }
 
+// Handle root URL
+void handleRoot() {
+  String html = R"(
+    <html>
+      <body>
+        <h1>ESP32 Waveform Generator</h1>
+        <p>Connected to: )" + String(WiFi.SSID()) + R"(</p>
+        <p>IP Address: )" + WiFi.localIP().toString() + R"(</p>
+        <form action="/setwaveform" method="GET">
+          <label for="waveform">Waveform:</label>
+          <select id="waveform" name="waveform">
+            <option value="0")" + (waveform == SINE ? " selected" : "") + R"(>Sine</option>
+            <option value="1")" + (waveform == TRIANGLE ? " selected" : "") + R"(>Triangle</option>
+            <option value="2")" + (waveform == SAWTOOTH ? " selected" : "") + R"(>Sawtooth</option>
+            <option value="3")" + (waveform == SQUARE ? " selected" : "") + R"(>Square</option>
+          </select>
+          <br>
+          <label for="left_freq">Left Channel Frequency (Hz):</label>
+          <input type="number" id="left_freq" name="left_freq" min="1" max="20000" value=")" + String(left_freq) + R"(">
+          <br>
+          <label for="right_freq">Right Channel Frequency (Hz):</label>
+          <input type="number" id="right_freq" name="right_freq" min="1" max="20000" value=")" + String(right_freq) + R"(">
+          <br>
+          <label for="phase_shift">Phase Shift (degrees):</label>
+          <input type="number" id="phase_shift" name="phase_shift" min="0" max="360" value=")" + String(phase_shift * 180 / M_PI) + R"(">
+          <br>
+          <input type="submit" value="Set Waveform and Parameters">
+        </form>
+        <form action="/equalizefreq" method="GET">
+          <input type="submit" value="Make Frequencies Equal">
+        </form>
+        <form action="/setsi5351" method="GET">
+          <label for="clk0_freq">Si5351 CLK0 Frequency (Hz):</label>
+          <input type="number" id="clk0_freq" name="clk0_freq" min="100000" max="200000000" value="100000000">
+          <br>
+          <label for="clk1_freq">Si5351 CLK1 Frequency (Hz):</label>
+          <input type="number" id="clk1_freq" name="clk1_freq" min="100000" max="200000000" value="50000000">
+          <br>
+          <label for="clk2_freq">Si5351 CLK2 Frequency (Hz):</label>
+          <input type="number" id="clk2_freq" name="clk2_freq" min="100000" max="200000000" value="25000000">
+          <br>
+          <input type="submit" value="Set Si5351 Frequencies">
+        </form>
+      </body>
+    </html>
+  )";
+  server.send(200, "text/html", html);
+}
+
+// Handle Si5351 frequency update
+void handleSetSi5351() {
+  if (server.hasArg("clk0_freq") && server.hasArg("clk1_freq") && server.hasArg("clk2_freq")) {
+    uint64_t clk0_freq = server.arg("clk0_freq").toInt(); // Input is already in Hz
+    uint64_t clk1_freq = server.arg("clk1_freq").toInt(); // Input is already in Hz
+    uint64_t clk2_freq = server.arg("clk2_freq").toInt(); // Input is already in Hz
+
+    si5351.set_freq(clk0_freq, SI5351_CLK0);
+    si5351.set_freq(clk1_freq, SI5351_CLK1);
+    si5351.set_freq(clk2_freq, SI5351_CLK2);
+  }
+  server.sendHeader("Location", "/");
+  server.send(303);
+}
+
+// Initialize Si5351
+void setupSi5351() {
+  bool i2c_found = si5351.init(SI5351_CRYSTAL_LOAD_8PF, 0, 0);
+  if (!i2c_found) {
+    Serial.println("Si5351 not found on I2C bus! Check wiring and I2C address.");
+    while (1); // Halt if initialization fails
+  }
+
+  // Set initial frequencies
+  si5351.set_freq(100000000ULL, SI5351_CLK0); // 100 MHz on CLK0
+  si5351.set_freq(50000000ULL, SI5351_CLK1);  // 50 MHz on CLK1
+  si5351.set_freq(25000000ULL, SI5351_CLK2);  // 25 MHz on CLK2
+
+  // Enable outputs
+  si5351.output_enable(SI5351_CLK0, 1);
+  si5351.output_enable(SI5351_CLK1, 1);
+  si5351.output_enable(SI5351_CLK2, 1);
+
+  Serial.println("Si5351 initialized successfully!");
+}
+
 void setup() {
   // Initialize Serial
   Serial.begin(115200);
 
-    // Initialize I2C
-    Wire.begin();
+  // Initialize I2C with custom pins
+  Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
 
-    // Initialize Si5351
-    if (si5351.init(SI5351_CRYSTAL_LOAD_8PF, 0, 0) == false) {
-      Serial.println("Si5351 initialization failed!");
-      while (1); // Halt if initialization fails
-    }
-  
-    // Set Si5351 outputs to default frequencies
-    si5351.set_freq(100000000, SI5351_CLK0); // 100 MHz on CLK0
-    si5351.set_freq(50000000, SI5351_CLK1);  // 50 MHz on CLK1
-    si5351.set_freq(25000000, SI5351_CLK2);  // 25 MHz on CLK2
-  
-    // Enable the outputs
-    si5351.output_enable(SI5351_CLK0, 1);
-    si5351.output_enable(SI5351_CLK1, 1);
-    si5351.output_enable(SI5351_CLK2, 1);
-  
+  // Initialize Si5351
+  setupSi5351();
+
   // Initialize WiFiManager
   WiFiManager wifiManager;
-
-  // Uncomment the following line to reset saved WiFi credentials
-  // wifiManager.resetSettings();
-
-  // Set a timeout for the configuration portal
-  wifiManager.setTimeout(180); // 3 minutes
 
   // Attempt to connect to WiFi
   if (!wifiManager.autoConnect("ESP32-Waveform")) {
@@ -212,9 +246,9 @@ void setup() {
     .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
     .communication_format = I2S_COMM_FORMAT_STAND_I2S,
     .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
-    .dma_buf_count = 16, // Increased buffer count for smoother streaming
-    .dma_buf_len = 512,  // Increased buffer length for smoother streaming
-    .use_apll = true      // Use Audio PLL for better clock accuracy
+    .dma_buf_count = 16,
+    .dma_buf_len = 512,
+    .use_apll = true
   };
 
   i2s_pin_config_t pin_config = {
@@ -234,40 +268,11 @@ void setup() {
   server.on("/", handleRoot);
   server.on("/setwaveform", handleSetWaveform);
   server.on("/equalizefreq", handleEqualizeFreq);
+  server.on("/setsi5351", handleSetSi5351);
   server.begin();
   Serial.println("HTTP server started");
 
   // OTA setup
-  ArduinoOTA.onStart([]() {
-    String type;
-    if (ArduinoOTA.getCommand() == U_FLASH) {
-      type = "sketch";
-    } else { // U_SPIFFS
-      type = "filesystem";
-    }
-    // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
-    Serial.println("Start updating " + type);
-  });
-  ArduinoOTA.onEnd([]() {
-    Serial.println("\nEnd");
-  });
-  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-    Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
-  });
-  ArduinoOTA.onError([](ota_error_t error) {
-    Serial.printf("Error[%u]: ", error);
-    if (error == OTA_AUTH_ERROR) {
-      Serial.println("Auth Failed");
-    } else if (error == OTA_BEGIN_ERROR) {
-      Serial.println("Begin Failed");
-    } else if (error == OTA_CONNECT_ERROR) {
-      Serial.println("Connect Failed");
-    } else if (error == OTA_RECEIVE_ERROR) {
-      Serial.println("Receive Failed");
-    } else if (error == OTA_END_ERROR) {
-      Serial.println("End Failed");
-    }
-  });
   ArduinoOTA.begin();
 }
 
